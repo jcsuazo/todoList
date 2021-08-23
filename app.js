@@ -1,228 +1,246 @@
 //-----------Require Express--------------------------------------------------
-const express = require("express");
+// const express = require("express");
+import express from "express";
 const app = express();
 //-----------Require Lodash--------------------------------------------------
 //handle of lower and upper case text
-const _ = require('lodash');
+// const _ = require("lodash");
+import _ from "lodash";
 
 //-----------Require mongoose (Data base handler)-----------------------------
-const mongoose = require('mongoose');
+// const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-//-----------Require ejs (Embedded JavaScript templating)----------------------
-let ejs = require("ejs");
-app.set('view engine', 'ejs');
+//-----------Require ejs (Embedded JavaScript template)----------------------
+// let ejs = require("ejs");
+import ejs from "ejs";
+app.set("view engine", "ejs");
 
 //------------Require path module (file and directory paths)------------------
-const path = require('path');
+// const path = require("path");
+import path from "path";
+
+//------------dotenv------------------
+import dotenv from "dotenv";
+dotenv.config();
 
 //---------global const ------------------------------------------------------
-const getDate = require("./date");
-const date = require(__dirname + "/date.js");
+// const getDate = require("./date");
+import getDate from "./date.js";
+// const date = require(__dirname + "/date.js");
 const dateAndTime = getDate();
 
+//---------bodyParser substitute (request and sending responses)---------------
+app.use(express.urlencoded({ extended: true }));
+// app.use(express.json());
 
-//---------bodyParser substitute (request and sending responses)--------------- 
-app.use(express.urlencoded());
-
-//---------create absolute path--------------- 
-app.use(express.static(path.join(__dirname + '/public')));
+//---------create absolute path---------------
+import { dirname } from "path";
+const __dirname = path.resolve();
+app.use(express.static(path.join(__dirname + "/public")));
 
 //----------add your own db at fruitsDB-----------------
-mongoose.connect('mongodb+srv://admin-pedro:michelle8266@cluster0.pgogv.mongodb.net/todolistDB', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-});
-
+import connectDB from "./config/db.js";
+import defaultItems from "./constants.js";
+connectDB();
 //--------------Create New Schema-------------------------------------------------
 // ItemSchema
-const itemsSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: [true, 'specified name please']
-    },
-});
-
-// ListSchema
-const listSchema = {
-    name: String,
-    items: [itemsSchema]
-};
 
 //-------------Create New Mongoose Model -----------------------------------------
-const Item = mongoose.model('Item', itemsSchema);
-
-const List = mongoose.model('List', listSchema);
-
+import List from "./model/ListModel.js";
+import Item from "./model/ItemModel.js";
 //---------Post request (handled incoming data)-----------------------------
-app.post('/', (req, res) => {
+app.post("/", async (req, res) => {
+  const itemName = req.body.toDo;
+  const listName = req.body.list;
+  //   console.log(listName);
+  //   return;
 
-    const itemName = req.body.toDo;
-    const listName = req.body.list;
+  const item = new Item({
+    name: itemName,
+  });
 
-    const item = new Item({
-        name: itemName
+  if (listName === "Today") {
+    item.save();
+    res.redirect("/");
+  } else {
+    const foundList = await List.findOne({
+      name: listName,
     });
-
-    if (listName === "Today") {
-        item.save();
-        res.redirect("/");
-    } else {
-        List.findOne({
-            name: listName
-        }, (err, foundList) => {
-            if (err) {
-                console.log(err);
-            } else {
-                foundList.items.push(item);
-                foundList.save();
-                res.redirect("/" + listName);
-            }
-        });
-    }
+    foundList.items.push(item);
+    foundList.save();
+    res.redirect("/" + listName);
+    // List.findOne(
+    //   {
+    //     name: listName,
+    //   },
+    //   (err, foundList) => {
+    //     if (err) {
+    //       console.log(err);
+    //     } else {
+    //       foundList.items.push(item);
+    //       foundList.save();
+    //       res.redirect("/" + listName);
+    //     }
+    //   }
+    // );
+  }
 });
 
 //Delete data from the data base
-app.post('/delete', (req, res) => {
-    const checkedItemId = req.body.checkbox;
-    const listName = req.body.listName;
+app.post("/delete", async (req, res) => {
+  const checkedItemId = req.body.checkbox;
+  const listName = req.body.listName;
 
-    if (listName === "Today") {
-        Item.findByIdAndRemove({
-            _id: checkedItemId
-        }, (err) => {
-            if (!err) {
-                console.log('Successfully deleted checked item');
-            };
-        });
-        res.redirect('/');
-    } else {
-        List.findOneAndUpdate({
-            name: listName
-        }, {
-            $pull: {
-                items: {
-                    _id: checkedItemId
-                }
-            }
-        }, (err, foundList) => {
-            if (!err) {
-                res.redirect('/' + listName);
-            }
-        });
-    }
+  if (listName === "Today") {
+    await Item.findByIdAndDelete({ _id: checkedItemId });
+    // Item.findByIdAndRemove(
+    //   {
+    //     _id: checkedItemId,
+    //   },
+    //   (err) => {
+    //     if (!err) {
+    //       console.log("Successfully deleted checked item");
+    //     }
+    //   }
+    // );
+    res.redirect("/");
+  } else {
+    await List.findOneAndUpdate(
+      {
+        name: listName,
+      },
+      {
+        $pull: {
+          items: {
+            _id: checkedItemId,
+          },
+        },
+      }
+    );
+    res.redirect("/" + listName);
+
+    // List.findOneAndUpdate(
+    //   {
+    //     name: listName,
+    //   },
+    //   {
+    //     $pull: {
+    //       items: {
+    //         _id: checkedItemId,
+    //       },
+    //     },
+    //   },
+    //   (err, foundList) => {
+    //     if (!err) {
+    //       res.redirect("/" + listName);
+    //     }
+    //   }
+    // );
+  }
 });
 
 //------------get requests -------------------------------------------------
-app.get('/', async (req, res) => {
+app.get("/", async (req, res) => {
+  //----------------------Using Model to create Objects------------------------
 
-    //----------------------Using Model to create Objects------------------------
-    const item1 = new Item({
-        name: "Clean the room"
-    });
+  const lists = await List.find({});
 
-    const item2 = new Item({
-        name: "do the homework"
-    });
+  //   const listOfProjects = lists.map((list) => {
+  //     return list.name;
+  //   });
 
-    const item3 = new Item({
-        name: "play some games"
-    });
+  const listOfProjects = [];
 
-    const defaultItems = [item1, item2, item3];
+  lists.forEach((list) => {
+    listOfProjects.push(list.name);
+  });
 
-    if (defaultItems === 0) {
+  const items = await Item.find({});
 
-        //----------------------Save that to database-----------
-        Item.insertMany(defaultItems, (err) => {
-            if (err) {
-                console.log(err);
-            } else {
-                console.log("successfully add default items to data base");
-            };
-        });
-        res.redirect('/');
-    } else {
-
-        const lists = await List.find({});
-        const listOfProjects = [];
-        lists.forEach((list) => {
-            listOfProjects.push(list.name);
-        });
-
-        const items = await Item.find({});
-
-        res.render('list', {
-            ToDoList: "Today",
-            dateAndTime: dateAndTime,
-            newListItems: items,
-            listOfProjects: listOfProjects
-        });
-    }
+  res.render("list", {
+    ToDoList: "Today",
+    dateAndTime,
+    newListItems: items,
+    listOfProjects,
+  });
 });
 
-app.get('/:customListName', (req, res) => {
+app.get("/:customListName", async (req, res) => {
+  const customListName = _.capitalize(req.params.customListName);
 
-    const customListName = _.capitalize(req.params.customListName);
-
-    //----------------------Using Model to create Objects------------------------
-    const item1 = new Item({
-        name: "Clean the room"
+  //----------------------Using Model to create Objects------------------------
+  let foundList = await List.findOne({
+    name: customListName,
+  });
+  if (!foundList) {
+    //create a new list
+    foundList = new List({
+      name: customListName,
+      items: defaultItems,
     });
+    foundList.save();
+  }
+  //Show an existing list
 
-    const item2 = new Item({
-        name: "do the homework"
-    });
+  const lists = await List.find({});
+  const listOfProjects = [];
+  lists.forEach((list) => {
+    listOfProjects.push(list.name);
+  });
 
-    const item3 = new Item({
-        name: "play some games"
-    });
+  res.render("list", {
+    ToDoList: foundList.name,
+    newListItems: foundList.items,
+    dateAndTime: dateAndTime,
+    listOfProjects: listOfProjects,
+  });
+  //   List.findOne(
+  //     {
+  //       name: customListName,
+  //     },
+  //     async (err, foundList) => {
+  //       if (!err) {
+  //         if (!foundList) {
+  //           //create a new list
+  //           const list = new List({
+  //             name: customListName,
+  //             items: defaultItems,
+  //           });
+  //           list.save();
+  //           res.redirect("/" + customListName);
+  //         } else {
+  //           //Show an existing list
 
-    const defaultItems = [item1, item2, item3];
+  //           const lists = await List.find({});
+  //           const listOfProjects = [];
+  //           lists.forEach((list) => {
+  //             listOfProjects.push(list.name);
+  //           });
 
-    List.findOne({
-        name: customListName
-    }, async (err, foundList) => {
-        if (!err) {
-            if (!foundList) {
-                //create a new list
-                const list = new List({
-                    name: customListName,
-                    items: defaultItems
-                });
-                list.save();
-                res.redirect("/" + customListName);
-            } else {
-                //Show an existing list
+  //           const items = await Item.find({});
 
-                const lists = await List.find({});
-                const listOfProjects = [];
-                lists.forEach((list) => {
-                    listOfProjects.push(list.name);
-                });
-
-                const items = await Item.find({});
-
-                res.render('list', {
-                    ToDoList: foundList.name,
-                    newListItems: foundList.items,
-                    dateAndTime: dateAndTime,
-                    listOfProjects: listOfProjects
-                });
-            }
-        }
-    });
-
+  //           res.render("list", {
+  //             ToDoList: foundList.name,
+  //             newListItems: foundList.items,
+  //             dateAndTime: dateAndTime,
+  //             listOfProjects: listOfProjects,
+  //           });
+  //         }
+  //       }
+  //     }
+  //   );
 });
 
 app.get("/about", (req, res) => {
-    res.render("about");
+  res.render("about");
 });
 
-let port = process.env.PORT;
-if (port == null || port == "") {
-    port = 3000;
-}
+let port = process.env.PORT || 5000;
+// if (port == null || port == "") {
+//   port = 3000;
+// }
 
 app.listen(port, function (res, req) {
-    console.log("server has started successfully");
+  console.log(`server started in port ${port}`);
 });
